@@ -5,14 +5,25 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 PDF_PATH = "Dataset - Flykite Airlines_ HRP.pdf"
 FAISS_INDEX_PATH = "faiss_index"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+SYSTEM_PROMPT = """You are an expert HR assistant for Flykite Airlines. \
+Answer employee questions clearly and accurately using only the HR policy \
+document context provided below.
+
+Guidelines:
+- Be concise but thorough
+- Use bullet points for lists or multi-part answers
+- Always cite the relevant policy area (e.g. "Per the Leave Policy...")
+- If the answer is not in the context, say: \
+"I couldn't find that in the Flykite HR handbook. Please contact HR directly."
+
+Context from HR Handbook:
+{context}"""
 
 
 def build_vectorstore():
@@ -34,62 +45,33 @@ def build_vectorstore():
     return vs
 
 
-def build_chain(vectorstore):
-    llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        groq_api_key=GROQ_API_KEY,
-        temperature=0.2,
-        max_tokens=1024,
-    )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
-
-    condense_prompt = ChatPromptTemplate.from_messages([
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-        ("human", "Given the conversation above, rewrite the follow-up question as a standalone question about Flykite Airlines HR policies."),
-    ])
-    history_aware_retriever = create_history_aware_retriever(llm, retriever, condense_prompt)
-
-    answer_prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are an expert HR assistant for Flykite Airlines. Answer employee questions clearly and accurately using only the HR policy document provided.
-
-Guidelines:
-- Be concise but thorough
-- Use bullet points for lists or multi-part answers
-- Always cite the relevant policy area (e.g. "Per the Leave Policy...")
-- If the answer is not in the document, say: "I couldn't find that in the Flykite HR handbook. Please contact HR directly."
-
-Context from HR Handbook:
-{context}"""),
-        MessagesPlaceholder("chat_history"),
-        ("human", "{input}"),
-    ])
-    docs_chain = create_stuff_documents_chain(llm, answer_prompt)
-    return create_retrieval_chain(history_aware_retriever, docs_chain)
-
-
 print("Loading HR handbook and building index...")
 vectorstore = build_vectorstore()
-rag_chain = build_chain(vectorstore)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=GROQ_API_KEY,
+    temperature=0.2,
+    max_tokens=1024,
+)
 print("Ready.")
 
 
 def respond(message: str, history: list) -> str:
-    # history = [{"role": "user"/"assistant", "content": "..."}, ...]
-    lc_history = []
+    docs = retriever.invoke(message)
+    context = "\n\n".join(doc.page_content for doc in docs)
+
+    messages = [SystemMessage(content=SYSTEM_PROMPT.format(context=context))]
     for msg in history:
         if msg["role"] == "user":
-            lc_history.append(HumanMessage(content=msg["content"]))
+            messages.append(HumanMessage(content=msg["content"]))
         elif msg["role"] == "assistant":
-            lc_history.append(AIMessage(content=msg["content"]))
+            messages.append(AIMessage(content=msg["content"]))
+    messages.append(HumanMessage(content=message))
 
-    result = rag_chain.invoke({"input": message, "chat_history": lc_history})
-    answer = result["answer"]
+    answer = llm.invoke(messages).content
 
-    pages = sorted(set(
-        doc.metadata.get("page", 0) + 1
-        for doc in result.get("context", [])
-    ))
+    pages = sorted(set(doc.metadata.get("page", 0) + 1 for doc in docs))
     if pages:
         answer += f"\n\n*📄 Referenced pages: {', '.join(str(p) for p in pages)}*"
 
