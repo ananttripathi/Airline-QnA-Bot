@@ -19,5 +19,7 @@ jobs:
         run: |
           git config user.email "ananttripathiak@gmail.com"
           git config user.name "ananttripathi"
+          git lfs install
+          git lfs migrate import --include="*.pdf" --include-ref=refs/heads/main
           git remote add space https://ananttripathiak:${HF_TOKEN}@huggingface.co/spaces/ananttripathiak/airline-hr-policy-bot
           git push space main --force
