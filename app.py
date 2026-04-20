@@ -62,11 +62,11 @@ def respond(message: str, history: list) -> str:
     context = "\n\n".join(doc.page_content for doc in docs)
 
     messages = [SystemMessage(content=SYSTEM_PROMPT.format(context=context))]
-    for msg in history:
-        if msg["role"] == "user":
-            messages.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            messages.append(AIMessage(content=msg["content"]))
+    # history is list of [user, assistant] pairs from gr.ChatInterface
+    for human, assistant in history:
+        messages.append(HumanMessage(content=human))
+        if assistant:
+            messages.append(AIMessage(content=assistant))
     messages.append(HumanMessage(content=message))
 
     answer = llm.invoke(messages).content
@@ -80,7 +80,6 @@ def respond(message: str, history: list) -> str:
 
 demo = gr.ChatInterface(
     fn=respond,
-    type="messages",
     title="✈️ Flykite Airlines HR Policy Assistant",
     description=(
         "Instant answers from the official Flykite Airlines HR handbook.\n\n"
