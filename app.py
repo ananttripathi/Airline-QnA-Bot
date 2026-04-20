@@ -94,7 +94,6 @@ demo = gr.ChatInterface(
         "What is the grievance redressal process?",
     ],
     theme=gr.themes.Soft(primary_hue="blue", secondary_hue="indigo", neutral_hue="slate"),
-    fill_height=True,
 )
 
 if __name__ == "__main__":
