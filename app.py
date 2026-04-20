@@ -93,7 +93,6 @@ demo = gr.ChatInterface(
         "What benefits are available to full-time employees?",
         "What is the grievance redressal process?",
     ],
-    theme=gr.themes.Soft(primary_hue="blue", secondary_hue="indigo", neutral_hue="slate"),
 )
 
 if __name__ == "__main__":
